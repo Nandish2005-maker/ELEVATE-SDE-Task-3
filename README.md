@@ -65,10 +65,13 @@ Invalid request bodies return `400` with an `errors` object listing each problem
 | POST | `/api/admin/login` | Body: `username`, `password`. Returns `200` with a `token`, or `401` |
 | GET | `/api/admin/applications` | List all applications (token required) |
 | GET | `/api/admin/certificates` | List all issued certificates (token required) |
+| PATCH | `/api/admin/applications/:applicationId/approve` | Approve a Pending application. Sets status to `Approved` and creates a new certificate. Returns the `certificateId` |
+| PATCH | `/api/admin/applications/:applicationId/reject` | Reject a Pending application. Optional body: `reason` |
+| GET | `/api/admin/certificates/:certificateId/revoke` | Revoke a certificate. Only the certificate changes; the application record stays the same (`PATCH` is also accepted) |
 
 Admin routes need the header `Authorization: Bearer <token>`. Without a valid token they return `401`.
 
-_Approve, reject and revoke endpoints are added in the next step._
+Status codes used: `200` success, `201` created, `400` invalid input, `401` not logged in, `404` not found, `409` action not allowed in the current state (for example approving an application that is already approved).
 
 ## Project Structure
 

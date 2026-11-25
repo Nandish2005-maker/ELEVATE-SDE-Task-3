@@ -90,6 +90,62 @@ async function run() {
   r = await call("GET", "/api/admin/certificates", { token: adminToken });
   check("certificates with token returns 200 and a list", r.status === 200 && r.data.count >= 2 && !!r.data.certificates[0].name);
 
+  console.log("\nApprove / reject / revoke");
+  const patchNoToken = await call("PATCH", "/api/admin/applications/APP-0002/approve");
+  check("approve without token returns 401", patchNoToken.status === 401);
+
+  // Fresh applications so these tests can be repeated any time
+  const makeApp = async () => (await call("POST", "/api/applications", { body: validBody })).data.applicationId;
+  const appA = await makeApp();
+  const appB = await makeApp();
+  const appC = await makeApp();
+
+  r = await call("PATCH", `/api/admin/applications/${appA}/approve`, { token: adminToken });
+  check("approve returns 200 with a certificateId", r.status === 200 && /^CERT-\d{4}$/.test(r.data.certificateId) && r.data.status === "Approved", JSON.stringify(r.data));
+  const certA = r.data.certificateId;
+
+  r = await call("GET", `/api/applications/track/${appA}`);
+  check("tracking shows Approved after approval", r.data.status === "Approved");
+  r = await call("GET", `/api/certificates/verify/${certA}`);
+  check("new certificate verifies as Valid with the applicant's name", r.status === 200 && r.data.status === "Valid" && r.data.name === "Test User");
+
+  r = await call("PATCH", `/api/admin/applications/${appA}/approve`, { token: adminToken });
+  check("approving twice returns 409", r.status === 409);
+  r = await call("PATCH", "/api/admin/applications/APP-9999/approve", { token: adminToken });
+  check("approving an unknown application returns 404", r.status === 404);
+
+  r = await call("PATCH", `/api/admin/applications/${appB}/reject`, { token: adminToken, body: { reason: "Documents unclear" } });
+  check("reject with a reason returns 200", r.status === 200 && r.data.status === "Rejected");
+  r = await call("GET", `/api/applications/track/${appB}`);
+  check("tracking shows Rejected", r.data.status === "Rejected");
+  r = await call("GET", "/api/admin/applications", { token: adminToken });
+  const rejected = r.data.applications.find((a) => a.applicationId === appB);
+  check("admin list shows the rejection reason", rejected?.rejectionReason === "Documents unclear");
+  r = await call("PATCH", `/api/admin/applications/${appB}/approve`, { token: adminToken });
+  check("approving a rejected application returns 409", r.status === 409);
+  r = await call("PATCH", "/api/admin/applications/APP-0001/reject", { token: adminToken });
+  check("rejecting an already approved application returns 409", r.status === 409);
+  r = await call("PATCH", `/api/admin/applications/${appC}/reject`, { token: adminToken });
+  check("reject without a reason returns 200", r.status === 200);
+
+  r = await call("GET", `/api/admin/certificates/${certA}/revoke`, { token: adminToken });
+  check("revoke (GET) returns 200", r.status === 200 && r.data.status === "Revoked", JSON.stringify(r.data));
+  r = await call("GET", `/api/certificates/verify/${certA}`);
+  check("verify now shows Revoked", r.data.status === "Revoked");
+  r = await call("GET", `/api/applications/track/${appA}`);
+  check("the application itself is unchanged (still Approved)", r.data.status === "Approved");
+  r = await call("GET", `/api/admin/certificates/${certA}/revoke`, { token: adminToken });
+  check("revoking twice returns 409", r.status === 409);
+  r = await call("GET", "/api/admin/certificates/CERT-9999/revoke", { token: adminToken });
+  check("revoking an unknown certificate returns 404", r.status === 404);
+  r = await call("GET", `/api/admin/certificates/${certA}/revoke`);
+  check("revoke without token returns 401", r.status === 401);
+
+  const appD = await makeApp();
+  const approveD = await call("PATCH", `/api/admin/applications/${appD}/approve`, { token: adminToken });
+  r = await call("PATCH", `/api/admin/certificates/${approveD.data.certificateId}/revoke`, { token: adminToken });
+  check("revoke (PATCH) also works", r.status === 200 && r.data.status === "Revoked");
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }
